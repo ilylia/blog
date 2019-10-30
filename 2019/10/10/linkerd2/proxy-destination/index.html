@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.0.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16.png">
+  <link rel="mask-icon" href="/images/safari-pinned-tab.svg" color="#222">
+  <link rel="manifest" href="/images/site.webmanifest">
+  <meta name="msapplication-config" content="/images/browserconfig.xml">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.css">
+
+
+<script id="hexo-configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '7.4.2',
+    exturl: false,
+    sidebar: {"position":"left","display":"post","offset":12,"onmobile":false},
+    copycode: {"enable":false,"show_result":false,"style":null},
+    back2top: {"enable":true,"sidebar":false,"scrollpercent":false},
+    bookmark: {"enable":false,"color":"#222","save":"auto"},
+    fancybox: true,
+    mediumzoom: false,
+    lazyload: false,
+    pangu: false,
+    algolia: {
+      appID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    },
+    localsearch: {"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},
+    path: '',
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    translation: {
+      copy_button: '复制',
+      copy_success: '复制成功',
+      copy_failure: '复制失败'
+    },
+    sidebarPadding: 40
+  };
+</script>
+
+  <meta name="description" content="概述proxy由rust开发完成，其内部的异步运行时采用了Tokio框架，服务组件用到了tower。 本文主要关注proxy与destination组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。">
+<meta name="keywords" content="service mesh,服务网格,linkerd2,linkerd">
+<meta property="og:type" content="article">
+<meta property="og:title" content="linkerd2 proxy destination 学习笔记">
+<meta property="og:url" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;2019&#x2F;10&#x2F;10&#x2F;linkerd2&#x2F;proxy-destination&#x2F;index.html">
+<meta property="og:site_name" content="Blog">
+<meta property="og:description" content="概述proxy由rust开发完成，其内部的异步运行时采用了Tokio框架，服务组件用到了tower。 本文主要关注proxy与destination组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;2019&#x2F;10&#x2F;10&#x2F;linkerd2&#x2F;proxy-destination&#x2F;proxy-destination.png">
+<meta property="og:updated_time" content="2019-10-30T03:40:53.964Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;2019&#x2F;10&#x2F;10&#x2F;linkerd2&#x2F;proxy-destination&#x2F;proxy-destination.png">
+
+<link rel="canonical" href="https://ilylia.github.io/2019/10/10/linkerd2/proxy-destination/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome: false,
+    isPost: true,
+    isPage: false,
+    isArchive: false
+  };
+</script>
+
+  <title>linkerd2 proxy destination 学习笔记 | Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-meta">
+
+    <div>
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">Blog</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+  </div>
+
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+</div>
+
+
+<nav class="site-nav">
+  
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+
+</nav>
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block " lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://ilylia.github.io/2019/10/10/linkerd2/proxy-destination/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars3.githubusercontent.com/u/419382">
+      <meta itemprop="name" content="ilylia">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          linkerd2 proxy destination 学习笔记
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-10-10 08:58:27" itemprop="dateCreated datePublished" datetime="2019-10-10T08:58:27+08:00">2019-10-10</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-calendar-check-o"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2019-10-30 11:40:53" itemprop="dateModified" datetime="2019-10-30T11:40:53+08:00">2019-10-30</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/linkerd/" itemprop="url" rel="index">
+                    <span itemprop="name">linkerd</span>
+                  </a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>proxy由rust开发完成，其内部的异步运行时采用了<a href="https://tokio-zh.github.io/" target="_blank" rel="noopener">Tokio</a>框架，服务组件用到了<a href="https://github.com/tower-rs/tower" target="_blank" rel="noopener">tower</a>。</p>
+<p>本文主要关注proxy与destination组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。</p>
+<a id="more"></a>
+
+<h2 id="流程分析"><a href="#流程分析" class="headerlink" title="流程分析"></a>流程分析</h2><h3 id="初始化"><a href="#初始化" class="headerlink" title="初始化"></a>初始化</h3><p>proxy启动后：</p>
+<ol>
+<li><code>app::init</code>初始化配置</li>
+<li><code>app::Main::new</code>创建主逻辑<code>main</code>，</li>
+<li><code>main.run_until</code>内新加一任务 <code>ProxyParts::build_proxy_task</code>。</li>
+</ol>
+<p>在<code>ProxyParts::build_proxy_task</code>中会进行一系列的初始化工作，此处只关注<code>dst_svc</code>，其创建代码为：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">dst_svc = svc::stack(connect::svc(keepalive))</span><br><span class="line">            .push(tls::client::layer(local_identity.clone()))</span><br><span class="line">            .push_timeout(config.control_connect_timeout)</span><br><span class="line">            .push(control::client::layer())</span><br><span class="line">            .push(control::resolve::layer(dns_resolver.clone()))</span><br><span class="line">            .push(reconnect::layer(&#123;</span><br><span class="line">                <span class="keyword">let</span> backoff = config.control_backoff.clone();</span><br><span class="line">                <span class="keyword">move</span> |_| <span class="literal">Ok</span>(backoff.stream())</span><br><span class="line">            &#125;))</span><br><span class="line">            .push(http_metrics::layer::&lt;_, classify::Response&gt;(</span><br><span class="line">                ctl_http_metrics.clone(),</span><br><span class="line">            ))</span><br><span class="line">            .push(proxy::grpc::req_body_as_payload::layer().per_make())</span><br><span class="line">            .push(control::add_origin::layer())</span><br><span class="line">            .push_buffer_pending(</span><br><span class="line">                config.destination_buffer_capacity,</span><br><span class="line">                config.control_dispatch_timeout,</span><br><span class="line">            )</span><br><span class="line">            .into_inner()</span><br><span class="line">            .make(config.destination_addr.clone())</span><br></pre></td></tr></table></figure>
+
+<p><code>dst_svc</code>一共有2处引用，一是<code>crate::resolve::Resolver</code>的创建会涉及；另一个就是<code>ProfilesClient</code>的创建。</p>
+<h4 id="Resolver"><a href="#Resolver" class="headerlink" title="Resolver"></a><code>Resolver</code></h4><ol>
+<li><code>api_resolve::Resolve::new(dst_svc.clone())</code>创建<code>resolver</code>对象</li>
+<li>调用<code>outbound::resolve</code>创建 <code>map_endpoint::Resolve</code>类型对象，并当做参数<code>resolve</code>传入<code>outbound::spawn</code>函数开启出口线程</li>
+</ol>
+<p>在<code>outbound::spawn</code>中，<code>resolve</code>被用于创建负载均衡控制层，并用于后续路由控制：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> balancer_layer = svc::layers()</span><br><span class="line">        .push_spawn_ready()</span><br><span class="line">        .push(discover::Layer::new(</span><br><span class="line">            DISCOVER_UPDATE_BUFFER_CAPACITY,</span><br><span class="line">            resolve,</span><br><span class="line">        ))</span><br><span class="line">        .push(balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY));</span><br></pre></td></tr></table></figure>
+
+<p>在<code>discover::Layer::layer</code>中：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> from_resolve = FromResolve::new(<span class="keyword">self</span>.resolve.clone());</span><br><span class="line"><span class="keyword">let</span> make_discover = MakeEndpoint::new(make_endpoint, from_resolve);</span><br><span class="line">Buffer::new(<span class="keyword">self</span>.capacity, make_discover)</span><br></pre></td></tr></table></figure>
+
+<h4 id="Profiles"><a href="#Profiles" class="headerlink" title="Profiles"></a><code>Profiles</code></h4><ol>
+<li>在<code>ProfilesClient::new</code>中调用<code>api::client::Destination::new(dst_svc)</code>创建grpc的client端并存于成员变量<code>service</code></li>
+<li>接着<code>profiles_client</code>对象会被用于<code>inbound</code>和<code>outbound</code>的创建（省略无关代码）：</li>
+</ol>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> dst_stack = svc::stack(...)...</span><br><span class="line">    .push(profiles::router::layer(</span><br><span class="line">        profile_suffixes,</span><br><span class="line">        profiles_client,</span><br><span class="line">        dst_route_stack,</span><br><span class="line">    ))</span><br><span class="line">    ...</span><br></pre></td></tr></table></figure>
+
+<p>其中<code>profiles::router::layer</code>会创建一个<code>Layer</code>对象，并将<code>profiles_client</code>赋予<code>get_routes</code>成员。然后在<code>service</code>方法中，会调到<code>Layer::layer</code>方法，里面会创建一个<code>MakeSvc</code>对象，其<code>get_routes</code>成员的值即为<code>profiles_client</code>。</p>
+<h3 id="运行"><a href="#运行" class="headerlink" title="运行"></a>运行</h3><p>新的连接过来时，从<code>listen</code>拿到连接对象后，会交给<code>linkerd_proxy::transport::tls::accept::AcceptTls</code>的<code>call</code>，然后是<code>linkerd2_proxy::proxy::server::Server</code>的<code>call</code>，并最终分别调用<code>linkerd2_proxy_http::balance::MakeSvc::call</code>和<code>linkerd2_proxy_http::profiles::router::MakeSvc::call</code>方法。</p>
+<h4 id="balance"><a href="#balance" class="headerlink" title="balance"></a><code>balance</code></h4><p>在<code>linkerd2_proxy_http::balance::MakeSvc::call</code>中：</p>
+<ol>
+<li>调用<code>inner.call(target)</code>，此处的<code>inner</code>即是前面<code>Buffer::new</code>的结果。</li>
+<li>生成一个新的<code>linkerd2_proxy_http::balance::MakeSvc</code>对象，当做<code>Future</code>返回</li>
+</ol>
+<p>先看<code>inner.call</code>。它内部经过层层调用，依次触发<code>Buffer</code>、<code>MakeEndpoint</code>、<code>FromResolve</code>等结构的<code>call</code>方法，最终会触发最开始创建的<code>resolve.resolve(target)</code>，其内部调用<code>api_resolve::Resolve::call</code>。</p>
+<p>在<code>api_resolve::Resolve::call</code>中：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">call</span></span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>, target: T) -&gt; Self::Future &#123;</span><br><span class="line">    <span class="keyword">let</span> path = target.to_string();</span><br><span class="line">    trace!(<span class="string">"resolve &#123;:?&#125;"</span>, path);</span><br><span class="line">    <span class="keyword">self</span>.service</span><br><span class="line">        <span class="comment">// GRPC请求，获取k8s的endpoint</span></span><br><span class="line">        .get(grpc::Request::new(api::GetDestination &#123;</span><br><span class="line">            path,</span><br><span class="line">            scheme: <span class="keyword">self</span>.scheme.clone(),</span><br><span class="line">            context_token: <span class="keyword">self</span>.context_token.clone(),</span><br><span class="line">        &#125;))</span><br><span class="line">        .map(|rsp| &#123;</span><br><span class="line">            debug!(metadata = ?rsp.metadata());</span><br><span class="line">            <span class="comment">// 拿到结果stream</span></span><br><span class="line">            Resolution &#123;</span><br><span class="line">                inner: rsp.into_inner(),</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>将返回的<code>Resolution</code>再次放入<code>MakeSvc</code>中，然后看其poll：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">poll</span></span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>) -&gt; Poll&lt;Self::Item, Self::Error&gt; &#123;</span><br><span class="line">    <span class="comment">// 这个poll会依次调用:</span></span><br><span class="line">    <span class="comment">//    linkerd2_proxy_api_resolve::resolve::Resolution::poll</span></span><br><span class="line">    <span class="comment">//    linkerd2_proxy_discover::from_resolve::DiscoverFuture::poll</span></span><br><span class="line">    <span class="comment">//    linkerd2_proxy_discover::make_endpoint::DiscoverFuture::poll</span></span><br><span class="line">    <span class="comment">// 最终获得Poll&lt;Change&lt;SocketAddr, Endpoint&gt;&gt;</span></span><br><span class="line">    <span class="keyword">let</span> discover = try_ready!(<span class="keyword">self</span>.inner.poll());</span><br><span class="line">    <span class="keyword">let</span> instrument = PendingUntilFirstData::default();</span><br><span class="line">    <span class="keyword">let</span> loaded = PeakEwmaDiscover::new(discover, <span class="keyword">self</span>.default_rtt, <span class="keyword">self</span>.decay, instrument);</span><br><span class="line">    <span class="keyword">let</span> balance = Balance::new(loaded, <span class="keyword">self</span>.rng.clone());</span><br><span class="line">    <span class="literal">Ok</span>(Async::Ready(balance))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>最终返回service <code>Balance</code>。</p>
+<p>当具体请求过来后，先会判断<code>Balance::poll_ready</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">poll_ready</span></span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>) -&gt; Poll&lt;(), Self::Error&gt; &#123;</span><br><span class="line">    <span class="comment">// 获取Update&lt;Endpoint&gt;</span></span><br><span class="line">    <span class="comment">// 将Remove的从self.ready_services中删掉</span></span><br><span class="line">    <span class="comment">// 将Insert的构造UnreadyService结构加到self.unready_services</span></span><br><span class="line">    <span class="keyword">self</span>.poll_discover()?;</span><br><span class="line">    <span class="comment">// 对UnreadyService，调用其poll，内部会调用到svc的poll_ready判断endpoint是否可用</span></span><br><span class="line">    <span class="comment">// 可用时，将其加入self.ready_services</span></span><br><span class="line">    <span class="keyword">self</span>.poll_unready();</span><br><span class="line"></span><br><span class="line">    <span class="keyword">loop</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">let</span> <span class="literal">Some</span>(index) = <span class="keyword">self</span>.next_ready_index &#123;</span><br><span class="line">            <span class="comment">// 找到对应的endpoint，可用则返回</span></span><br><span class="line">            <span class="keyword">if</span> <span class="keyword">let</span> <span class="literal">Ok</span>(Async::Ready(())) = <span class="keyword">self</span>.poll_ready_index_or_evict(index) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">Ok</span>(Async::Ready(()));</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 选择负载比较低的endpoint</span></span><br><span class="line">        <span class="keyword">self</span>.next_ready_index = <span class="keyword">self</span>.p2c_next_ready_index();</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">self</span>.next_ready_index.is_none() &#123;</span><br><span class="line">            <span class="comment">//</span></span><br><span class="line">            <span class="keyword">return</span> <span class="literal">Ok</span>(Async::NotReady);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>就绪后，对请求<code>req</code>调用<code>call</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">call</span></span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>, request: Req) -&gt; Self::Future &#123;</span><br><span class="line">    <span class="comment">// 找到下一个可用的svc，并将其从ready_services中删除</span></span><br><span class="line">    <span class="keyword">let</span> index = <span class="keyword">self</span>.next_ready_index.take().expect(<span class="string">"not ready"</span>);</span><br><span class="line">    <span class="keyword">let</span> (key, <span class="keyword">mut</span> svc) = <span class="keyword">self</span></span><br><span class="line">        .ready_services</span><br><span class="line">        .swap_remove_index(index)</span><br><span class="line">        .expect(<span class="string">"invalid ready index"</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 将请求转过去</span></span><br><span class="line">    <span class="keyword">let</span> fut = svc.call(request);</span><br><span class="line">    <span class="comment">// 加到unready</span></span><br><span class="line">    <span class="keyword">self</span>.push_unready(key, svc);</span><br><span class="line"></span><br><span class="line">    fut.map_err(<span class="built_in">Into</span>::into)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<h4 id="profiles"><a href="#profiles" class="headerlink" title="profiles"></a><code>profiles</code></h4><p>在<code>linkerd2_proxy_http::profiles::router::MakeSvc::call</code>中：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Initiate a stream to get route and dst_override updates for this</span></span><br><span class="line"><span class="comment">// destination.</span></span><br><span class="line"><span class="keyword">let</span> route_stream = <span class="keyword">match</span> target.get_destination() &#123;</span><br><span class="line">    <span class="literal">Some</span>(<span class="keyword">ref</span> dst) =&gt; &#123;</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">self</span>.suffixes.iter().any(|s| s.contains(dst.name())) &#123;</span><br><span class="line">            debug!(<span class="string">"fetching routes for &#123;:?&#125;"</span>, dst);</span><br><span class="line">            <span class="keyword">self</span>.get_routes.get_routes(&amp;dst)</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            debug!(<span class="string">"skipping route discovery for dst=&#123;:?&#125;"</span>, dst);</span><br><span class="line">            <span class="literal">None</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="literal">None</span> =&gt; &#123;</span><br><span class="line">        debug!(<span class="string">"no destination for routes"</span>);</span><br><span class="line">        <span class="literal">None</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>经过若干判断后，会调用<code>ProfilesClient::get_routes</code>并将结果存于<code>route_stream</code>。</p>
+<p>进入<code>get_routes</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">get_routes</span></span>(&amp;<span class="keyword">self</span>, dst: &amp;NameAddr) -&gt; <span class="built_in">Option</span>&lt;Self::Stream&gt; &#123;</span><br><span class="line">    <span class="comment">// 创建通道</span></span><br><span class="line">    <span class="keyword">let</span> (tx, rx) = mpsc::channel(<span class="number">1</span>);</span><br><span class="line">    <span class="comment">// This oneshot allows the daemon to be notified when the Self::Stream</span></span><br><span class="line">    <span class="comment">// is dropped.</span></span><br><span class="line">    <span class="keyword">let</span> (hangup_tx, hangup_rx) = oneshot::channel();</span><br><span class="line">    <span class="comment">// 创建Daemon对象（Future任务）</span></span><br><span class="line">    <span class="keyword">let</span> daemon = Daemon &#123;</span><br><span class="line">        tx,</span><br><span class="line">        hangup: hangup_rx,</span><br><span class="line">        dst: <span class="built_in">format!</span>(<span class="string">"&#123;&#125;"</span>, dst),</span><br><span class="line">        state: State::Disconnected,</span><br><span class="line">        service: <span class="keyword">self</span>.service.clone(),</span><br><span class="line">        backoff: <span class="keyword">self</span>.backoff,</span><br><span class="line">        context_token: <span class="keyword">self</span>.context_token.clone(),</span><br><span class="line">    &#125;;</span><br><span class="line">    <span class="comment">// 调用Daemon::poll</span></span><br><span class="line">    <span class="keyword">let</span> spawn = DefaultExecutor::current().spawn(<span class="built_in">Box</span>::new(daemon.map_err(|_| ())));</span><br><span class="line">    <span class="comment">// 将通道接收端传出</span></span><br><span class="line">    spawn.ok().map(|_| Rx &#123;</span><br><span class="line">        rx,</span><br><span class="line">        _hangup: hangup_tx,</span><br><span class="line">    &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>接着看<code>Daemon::poll</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">poll</span></span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>) -&gt; Poll&lt;Self::Item, Self::Error&gt; &#123;</span><br><span class="line">    <span class="keyword">loop</span> &#123;</span><br><span class="line">        <span class="comment">// 遍历state成员状态</span></span><br><span class="line">        <span class="keyword">self</span>.state = <span class="keyword">match</span> <span class="keyword">self</span>.state &#123;</span><br><span class="line">            <span class="comment">// 未连接时</span></span><br><span class="line">            State::Disconnected =&gt; &#123;</span><br><span class="line">                <span class="keyword">match</span> <span class="keyword">self</span>.service.poll_ready() &#123;</span><br><span class="line">                    <span class="literal">Ok</span>(Async::NotReady) =&gt; <span class="keyword">return</span> <span class="literal">Ok</span>(Async::NotReady),</span><br><span class="line">                    <span class="literal">Ok</span>(Async::Ready(())) =&gt; &#123;&#125;</span><br><span class="line">                    <span class="literal">Err</span>(err) =&gt; &#123;</span><br><span class="line">                        error!(</span><br><span class="line">                            <span class="string">"profile service unexpected error (dst = &#123;&#125;): &#123;:?&#125;"</span>,</span><br><span class="line">                            <span class="keyword">self</span>.dst, err,</span><br><span class="line">                        );</span><br><span class="line">                        <span class="keyword">return</span> <span class="literal">Ok</span>(Async::Ready(()));</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;;</span><br><span class="line">                <span class="comment">// 构造grpc请求</span></span><br><span class="line">                <span class="keyword">let</span> req = api::GetDestination &#123;</span><br><span class="line">                    scheme: <span class="string">"k8s"</span>.to_owned(),</span><br><span class="line">                    path: <span class="keyword">self</span>.dst.clone(),</span><br><span class="line">                    context_token: <span class="keyword">self</span>.context_token.clone(),</span><br><span class="line">                &#125;;</span><br><span class="line">                debug!(<span class="string">"getting profile: &#123;:?&#125;"</span>, req);</span><br><span class="line">                <span class="comment">// 获取请求任务</span></span><br><span class="line">                <span class="keyword">let</span> rspf = <span class="keyword">self</span>.service.get_profile(grpc::Request::new(req));</span><br><span class="line">                State::Waiting(rspf)</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="comment">// 正在请求时，从请求中获取回复</span></span><br><span class="line">            State::Waiting(<span class="keyword">ref</span> <span class="keyword">mut</span> f) =&gt; <span class="keyword">match</span> f.poll() &#123;</span><br><span class="line">                <span class="literal">Ok</span>(Async::NotReady) =&gt; <span class="keyword">return</span> <span class="literal">Ok</span>(Async::NotReady),</span><br><span class="line">                <span class="comment">// 正常回复</span></span><br><span class="line">                <span class="literal">Ok</span>(Async::Ready(rsp)) =&gt; &#123;</span><br><span class="line">                    trace!(<span class="string">"response received"</span>);</span><br><span class="line">                    <span class="comment">// 流式回复</span></span><br><span class="line">                    State::Streaming(rsp.into_inner())</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="literal">Err</span>(e) =&gt; &#123;</span><br><span class="line">                    warn!(<span class="string">"error fetching profile for &#123;&#125;: &#123;:?&#125;"</span>, <span class="keyword">self</span>.dst, e);</span><br><span class="line">                    State::Backoff(Delay::new(clock::now() + <span class="keyword">self</span>.backoff))</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;,</span><br><span class="line">            <span class="comment">// 接收回复</span></span><br><span class="line">            State::Streaming(<span class="keyword">ref</span> <span class="keyword">mut</span> s) =&gt; &#123;</span><br><span class="line">                <span class="comment">// 处理回复流</span></span><br><span class="line">                <span class="comment">// 注意此处，参数1是get_profile请求的回复流，</span></span><br><span class="line">                <span class="comment">//   参数2是之前创建的通道发送端</span></span><br><span class="line">                <span class="keyword">match</span> Self::proxy_stream(s, &amp;<span class="keyword">mut</span> <span class="keyword">self</span>.tx, &amp;<span class="keyword">mut</span> <span class="keyword">self</span>.hangup) &#123;</span><br><span class="line">                    Async::NotReady =&gt; <span class="keyword">return</span> <span class="literal">Ok</span>(Async::NotReady),</span><br><span class="line">                    Async::Ready(StreamState::SendLost) =&gt; <span class="keyword">return</span> <span class="literal">Ok</span>(().into()),</span><br><span class="line">                    Async::Ready(StreamState::RecvDone) =&gt; &#123;</span><br><span class="line">                        State::Backoff(Delay::new(clock::now() + <span class="keyword">self</span>.backoff))</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="comment">// 异常，结束请求</span></span><br><span class="line">            State::Backoff(<span class="keyword">ref</span> <span class="keyword">mut</span> f) =&gt; <span class="keyword">match</span> f.poll() &#123;</span><br><span class="line">                <span class="literal">Ok</span>(Async::NotReady) =&gt; <span class="keyword">return</span> <span class="literal">Ok</span>(Async::NotReady),</span><br><span class="line">                <span class="literal">Err</span>(_) | <span class="literal">Ok</span>(Async::Ready(())) =&gt; State::Disconnected,</span><br><span class="line">            &#125;,</span><br><span class="line">        &#125;;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>接着 <code>proxy_stream</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">proxy_stream</span></span>(</span><br><span class="line">    rx: &amp;<span class="keyword">mut</span> grpc::Streaming&lt;api::DestinationProfile, T::ResponseBody&gt;,</span><br><span class="line">    tx: &amp;<span class="keyword">mut</span> mpsc::Sender&lt;profiles::Routes&gt;,</span><br><span class="line">    hangup: &amp;<span class="keyword">mut</span> oneshot::Receiver&lt;Never&gt;,</span><br><span class="line">) -&gt; Async&lt;StreamState&gt; &#123;</span><br><span class="line">    <span class="keyword">loop</span> &#123;</span><br><span class="line">        <span class="comment">// 发送端是否就绪</span></span><br><span class="line">        <span class="keyword">match</span> tx.poll_ready() &#123;</span><br><span class="line">            <span class="literal">Ok</span>(Async::NotReady) =&gt; <span class="keyword">return</span> Async::NotReady,</span><br><span class="line">            <span class="literal">Ok</span>(Async::Ready(())) =&gt; &#123;&#125;</span><br><span class="line">            <span class="literal">Err</span>(_) =&gt; <span class="keyword">return</span> StreamState::SendLost.into(),</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 从grpc stream中取得一条数据</span></span><br><span class="line">        <span class="keyword">match</span> rx.poll() &#123;</span><br><span class="line">            <span class="literal">Ok</span>(Async::NotReady) =&gt; <span class="keyword">match</span> hangup.poll() &#123;</span><br><span class="line">                <span class="literal">Ok</span>(Async::Ready(never)) =&gt; <span class="keyword">match</span> never &#123;&#125;, <span class="comment">// unreachable!</span></span><br><span class="line">                <span class="literal">Ok</span>(Async::NotReady) =&gt; &#123;</span><br><span class="line">                    <span class="comment">// We are now scheduled to be notified if the hangup tx</span></span><br><span class="line">                    <span class="comment">// is dropped.</span></span><br><span class="line">                    <span class="keyword">return</span> Async::NotReady;</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="literal">Err</span>(_) =&gt; &#123;</span><br><span class="line">                    <span class="comment">// Hangup tx has been dropped.</span></span><br><span class="line">                    debug!(<span class="string">"profile stream cancelled"</span>);</span><br><span class="line">                    <span class="keyword">return</span> StreamState::SendLost.into();</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;,</span><br><span class="line">            <span class="literal">Ok</span>(Async::Ready(<span class="literal">None</span>)) =&gt; <span class="keyword">return</span> StreamState::RecvDone.into(),</span><br><span class="line">            <span class="comment">// 正确取得profile结构</span></span><br><span class="line">            <span class="literal">Ok</span>(Async::Ready(<span class="literal">Some</span>(profile))) =&gt; &#123;</span><br><span class="line">                debug!(<span class="string">"profile received: &#123;:?&#125;"</span>, profile);</span><br><span class="line">                <span class="comment">// 解析数据</span></span><br><span class="line">                <span class="keyword">let</span> retry_budget = profile.retry_budget.and_then(convert_retry_budget);</span><br><span class="line">                <span class="keyword">let</span> routes = profile</span><br><span class="line">                    .routes</span><br><span class="line">                    .into_iter()</span><br><span class="line">                    .filter_map(<span class="keyword">move</span> |orig| convert_route(orig, retry_budget.as_ref()))</span><br><span class="line">                    .collect();</span><br><span class="line">                <span class="keyword">let</span> dst_overrides = profile</span><br><span class="line">                    .dst_overrides</span><br><span class="line">                    .into_iter()</span><br><span class="line">                    .filter_map(convert_dst_override)</span><br><span class="line">                    .collect();</span><br><span class="line">                <span class="comment">// 构造profiles::Routes结构并推到发送端</span></span><br><span class="line">                <span class="keyword">match</span> tx.start_send(profiles::Routes &#123;</span><br><span class="line">                    routes,</span><br><span class="line">                    dst_overrides,</span><br><span class="line">                &#125;) &#123;</span><br><span class="line">                    <span class="literal">Ok</span>(AsyncSink::Ready) =&gt; &#123;&#125; <span class="comment">// continue</span></span><br><span class="line">                    <span class="literal">Ok</span>(AsyncSink::NotReady(_)) =&gt; &#123;</span><br><span class="line">                        info!(<span class="string">"dropping profile update due to a full buffer"</span>);</span><br><span class="line">                        <span class="comment">// This must have been because another task stole</span></span><br><span class="line">                        <span class="comment">// our tx slot? It seems pretty unlikely, but possible?</span></span><br><span class="line">                        <span class="keyword">return</span> Async::NotReady;</span><br><span class="line">                    &#125;</span><br><span class="line">                    <span class="literal">Err</span>(_) =&gt; &#123;</span><br><span class="line">                        <span class="keyword">return</span> StreamState::SendLost.into();</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="literal">Err</span>(e) =&gt; &#123;</span><br><span class="line">                warn!(<span class="string">"profile stream failed: &#123;:?&#125;"</span>, e);</span><br><span class="line">                <span class="keyword">return</span> StreamState::RecvDone.into();</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<p>回到<code>MakeSvc::call</code>方法，前面创建的<code>route_stream</code>会被用于创建一个<code>linkerd2_proxy::proxy::http::profiles::router::Service</code>任务对象，并在其<code>poll_ready</code>方法中通过<code>poll_route_stream</code>从<code>route_steam</code>获取<code>profiles::Routes</code>并调用<code>update_routes</code>创建具体可用的路由规则<code>linkerd2_router::Router</code>，至此，路由规则已建好，就等具体的请求过来然后在<code>call</code>中调用<code>linkerd2_router::call</code>进行对请求的路由判断。</p>
+<h3 id="图示"><a href="#图示" class="headerlink" title="图示"></a>图示</h3><h4 id="profile"><a href="#profile" class="headerlink" title="profile"></a>profile</h4><p><img src="./proxy-destination.png" alt="proxy-destination"></p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>proxy采用的tower框架，每个处理逻辑都是其中的一个layer，开发时只需层层堆叠即可。不过，也正因如此，各层之间的接口都极其相似，须得小心不可调错。</p>
+<p>对于destination这部分逻辑，linkerd2的destination组件收到来自proxy的grpc请求后，每当endpoint或service profile有任何变动，都会立即通过stream发送过去，proxy收到后根据endpoint调整负载均衡策略，根据service profile调整路由，然后通过它们来处理用户服务的实际请求。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/linkerd/" rel="tag"># linkerd</a>
+              <a href="/tags/proxy/" rel="tag"># proxy</a>
+              <a href="/tags/destination/" rel="tag"># destination</a>
+              <a href="/tags/service-profile/" rel="tag"># service profile</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-next post-nav-item">
+            </div>
+
+            <span class="post-nav-divider"></span>
+
+            <div class="post-nav-prev post-nav-item">
+                <a href="/2019/10/25/linkerd2/proxy-conn-req/" rel="prev" title="linkerd2 proxy 连接请求处理 学习笔记">
+                  linkerd2 proxy 连接请求处理 学习笔记 <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#概述"><span class="nav-number">1.</span> <span class="nav-text">概述</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#流程分析"><span class="nav-number">2.</span> <span class="nav-text">流程分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#初始化"><span class="nav-number">2.1.</span> <span class="nav-text">初始化</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Resolver"><span class="nav-number">2.1.1.</span> <span class="nav-text">Resolver</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Profiles"><span class="nav-number">2.1.2.</span> <span class="nav-text">Profiles</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#运行"><span class="nav-number">2.2.</span> <span class="nav-text">运行</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#balance"><span class="nav-number">2.2.1.</span> <span class="nav-text">balance</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#profiles"><span class="nav-number">2.2.2.</span> <span class="nav-text">profiles</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#图示"><span class="nav-number">2.3.</span> <span class="nav-text">图示</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#profile"><span class="nav-number">2.3.1.</span> <span class="nav-text">profile</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#总结"><span class="nav-number">3.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <img class="site-author-image" itemprop="image" alt="ilylia"
+    src="https://avatars3.githubusercontent.com/u/419382">
+  <p class="site-author-name" itemprop="name">ilylia</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">2</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2019</span>
+  <span class="with-love">
+    <i class="fa fa-"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">ilylia</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+  <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script>
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

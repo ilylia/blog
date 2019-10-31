@@ -8,6 +8,7 @@ summary: "在本文章中，能粗略了解到 linker2 的代理服务 proxy 组
 tags: ["linkerd", "proxy", "destination", "service profile"]
 categories: ["linkerd"]
 keywords: ["service mesh","服务网格","linkerd2","linkerd"]
+typora-copy-images-to: proxy-destination
 ---
 
 
@@ -412,7 +413,7 @@ Buffer::new(self.capacity, make_discover)
 
 #### profile
 
-![proxy-destination](./proxy-destination.png)
+![flow](proxy-destination/flow.png)
 
 
 

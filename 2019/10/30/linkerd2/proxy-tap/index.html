@@ -53,18 +53,19 @@
   };
 </script>
 
-  <meta name="description" content="概述proxy由rust开发完成，其内部的异步运行时采用了Tokio框架，服务组件用到了tower。 本文主要关注proxy与tap组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。">
+  <meta name="description" content="概述Linkerd2由控制平面和数据平面组成：  控制平面是在一个专门的Kubernetes命名空间（默认是linkerd）中运行的一组服务，这些服务共同实现了聚合遥测数据、提供一组面向用户的API、向数据平面提供控制指令等功能。  数据平面由一组用Rust编写的轻量级代理组成，它们安装在服务的每个pod中。它通过initContainer配置iptables来接管Pod的所有出入流量。它对服务毫">
 <meta name="keywords" content="service mesh,服务网格,linkerd2,linkerd">
 <meta property="og:type" content="article">
 <meta property="og:title" content="linkerd2 proxy tap 学习笔记">
 <meta property="og:url" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;10&#x2F;30&#x2F;linkerd2&#x2F;proxy-tap&#x2F;index.html">
 <meta property="og:site_name" content="Blog">
-<meta property="og:description" content="概述proxy由rust开发完成，其内部的异步运行时采用了Tokio框架，服务组件用到了tower。 本文主要关注proxy与tap组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。">
+<meta property="og:description" content="概述Linkerd2由控制平面和数据平面组成：  控制平面是在一个专门的Kubernetes命名空间（默认是linkerd）中运行的一组服务，这些服务共同实现了聚合遥测数据、提供一组面向用户的API、向数据平面提供控制指令等功能。  数据平面由一组用Rust编写的轻量级代理组成，它们安装在服务的每个pod中。它通过initContainer配置iptables来接管Pod的所有出入流量。它对服务毫">
 <meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;10&#x2F;30&#x2F;linkerd2&#x2F;proxy-tap&#x2F;control-plane.png">
 <meta property="og:image" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;10&#x2F;30&#x2F;linkerd2&#x2F;proxy-tap&#x2F;proxy-tap.png">
-<meta property="og:updated_time" content="2019-10-31T09:30:01.252Z">
+<meta property="og:updated_time" content="2019-11-04T02:18:06.488Z">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;10&#x2F;30&#x2F;linkerd2&#x2F;proxy-tap&#x2F;proxy-tap.png">
+<meta name="twitter:image" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;10&#x2F;30&#x2F;linkerd2&#x2F;proxy-tap&#x2F;control-plane.png">
 
 <link rel="canonical" href="https://ilylia.github.io/blog/2019/10/30/linkerd2/proxy-tap/">
 
@@ -209,7 +210,7 @@
                   <i class="fa fa-calendar-check-o"></i>
                 </span>
                 <span class="post-meta-item-text">更新于</span>
-                <time title="修改时间：2019-10-31 17:30:01" itemprop="dateModified" datetime="2019-10-31T17:30:01+08:00">2019-10-31</time>
+                <time title="修改时间：2019-11-04 10:18:06" itemprop="dateModified" datetime="2019-11-04T10:18:06+08:00">2019-11-04</time>
               </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -234,25 +235,41 @@
     <div class="post-body" itemprop="articleBody">
 
       
-        <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>proxy由rust开发完成，其内部的异步运行时采用了<a href="https://tokio-zh.github.io/" target="_blank" rel="noopener">Tokio</a>框架，服务组件用到了<a href="https://github.com/tower-rs/tower" target="_blank" rel="noopener">tower</a>。</p>
-<p>本文主要关注proxy与tap组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。</p>
+        <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>Linkerd2由<code>控制平面</code>和<code>数据平面</code>组成：</p>
+<ul>
+<li><p><code>控制平面</code>是在一个专门的Kubernetes命名空间（默认是linkerd）中运行的一组服务，这些服务共同实现了聚合遥测数据、提供一组面向用户的API、向<code>数据平面</code>提供控制指令等功能。</p>
+</li>
+<li><p><code>数据平面</code>由一组用Rust编写的轻量级代理组成，它们安装在服务的每个pod中。它通过<code>initContainer</code>配置<code>iptables</code>来接管Pod的所有出入流量。它对服务毫无侵入，服务本身不需要修改任何代码，甚至可以将它添加到<code>正在运行</code>的服务中。</p>
+</li>
+</ul>
+<p>以下是官方的架构示意图：</p>
+<p><img src="control-plane.png" alt="proxy-destination"></p>
+<p>tap是Linkerd2的一个非常有特色的功能，它可以随时抓取某资源的实时流量。有效的利用该功能可以非常方便的监控服务的请求流量情况，协助调试服务。</p>
+<p>tap相关的功能组件如下：</p>
+<ul>
+<li>web/CLI: 发起tap请求，展示tap监控结果</li>
+<li>tap: 将来自web/CLI的tap请求转为gRPC请求并发至proxy组件，将proxy回复的tap事件回复给web/CLI</li>
+<li>proxy: 处理tap请求，从经过的request/response数据中获取需要的信息，组成tap事件上报</li>
+</ul>
+<p>前两者逻辑相对简单，此处主要关注proxy与tap组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。</p>
+<blockquote>
+<p>注：本文基于<code>Linkerd2</code> <code>stable-2.6.0</code>版本，<code>linkerd-proxy</code> <code>v2.76.0</code>版本。</p>
+</blockquote>
 <a id="more"></a>
-
-
 
 <h2 id="初始化"><a href="#初始化" class="headerlink" title="初始化"></a>初始化</h2><p>首先是初始化，在<code>build_proxy_task</code>中：</p>
 <figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> (tap_layer, tap_grpc, tap_daemon) = tap::new();</span><br></pre></td></tr></table></figure>
 
-<p>其中：</p>
+<p>进入<code>tap::new()</code>：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> (daemon, register, subscribe) = daemon::new();</span><br><span class="line"><span class="keyword">let</span> layer = Layer::new(register);</span><br><span class="line"><span class="keyword">let</span> server = Server::new(subscribe);</span><br><span class="line">(layer, server, daemon)</span><br></pre></td></tr></table></figure>
+
+<p>此处创建了如下3个对象：</p>
 <ul>
 <li><code>tap_layer</code> 用于后续的 <code>inbound</code> 和 <code>outbound</code> 逻辑，及后续请求处理</li>
 <li><code>tap_grpc</code> 用于 <code>TapServer</code> 创建，处理tap组件的grpc请求</li>
 <li><code>tap_daemon</code> 则作为任务正常运行，负责黏合layer与grpc</li>
 </ul>
-<p>进入<code>tap::new()</code>：</p>
-<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> (daemon, register, subscribe) = daemon::new();</span><br><span class="line"><span class="keyword">let</span> layer = Layer::new(register);</span><br><span class="line"><span class="keyword">let</span> server = Server::new(subscribe);</span><br><span class="line">(layer, server, daemon)</span><br></pre></td></tr></table></figure>
-
-<p>这3句分别创建了这3个对象。</p>
+<p>下面分别介绍。</p>
 <h3 id="tap-daemon"><a href="#tap-daemon" class="headerlink" title="tap_daemon"></a><code>tap_daemon</code></h3><p>进入<code>daemon::new()</code>：</p>
 <figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> (svc_tx, svc_rx) = mpsc::channel(super::REGISTER_CHANNEL_CAPACITY);</span><br><span class="line"><span class="keyword">let</span> (tap_tx, tap_rx) = mpsc::channel(super::TAP_CAPACITY);</span><br><span class="line"></span><br><span class="line"><span class="keyword">let</span> daemon = Daemon &#123;</span><br><span class="line">    svc_rx,</span><br><span class="line">    svcs: <span class="built_in">Vec</span>::default(),</span><br><span class="line"></span><br><span class="line">    tap_rx,</span><br><span class="line">    taps: <span class="built_in">Vec</span>::default(),</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">(daemon, Register(svc_tx), Subscribe(tap_tx))</span><br></pre></td></tr></table></figure>
 
@@ -280,7 +297,7 @@
 <figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 实际服务回复的future，调用poll拿到实际response</span></span><br><span class="line"><span class="keyword">match</span> <span class="keyword">self</span>.inner.poll() &#123;</span><br><span class="line">    <span class="literal">Ok</span>(Async::NotReady) =&gt; <span class="literal">Ok</span>(Async::NotReady),</span><br><span class="line">    <span class="literal">Ok</span>(Async::Ready(rsp)) =&gt; &#123;</span><br><span class="line">        <span class="comment">// 对response调用TapResponse::tap获取信息</span></span><br><span class="line">        <span class="keyword">let</span> taps = <span class="keyword">self</span>.taps.drain(..).map(|t| t.tap(&amp;rsp)).collect();</span><br><span class="line">        <span class="keyword">let</span> rsp = rsp.map(<span class="keyword">move</span> |inner| &#123;</span><br><span class="line">            <span class="keyword">let</span> <span class="keyword">mut</span> body = Payload &#123; inner, taps &#125;;</span><br><span class="line">            <span class="keyword">if</span> body.is_end_stream() &#123;</span><br><span class="line">                body.eos(<span class="literal">None</span>);</span><br><span class="line">            &#125;</span><br><span class="line">            body</span><br><span class="line">        &#125;);</span><br><span class="line">        <span class="literal">Ok</span>(Async::Ready(rsp))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="literal">Err</span>(e) =&gt; &#123;</span><br><span class="line">        <span class="keyword">for</span> tap <span class="keyword">in</span> <span class="keyword">self</span>.taps.drain(..) &#123;</span><br><span class="line">            tap.fail(&amp;e);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="literal">Err</span>(e)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 <p>前面这些逻辑，其中出现了2个tap接口，一个是<code>Tap::tap</code>，一个是<code>TapResponse::tap</code>，这俩的核心作用都是从请求或回复数据中获取需要的tap信息，然后发往某个通道，细节下面再讲。</p>
-<h3 id="tap-grpc"><a href="#tap-grpc" class="headerlink" title="tap_grpc"></a><code>tap_grpc</code></h3><p><code>tap_grpc</code>由<code>Server::new(subscribe)</code>生成，实现了<code>api::server::Tap</code>这个grpc server，响应<code>observe</code>这个method请求。该请求来自linkerd2的tap组件。</p>
+<h3 id="tap-grpc"><a href="#tap-grpc" class="headerlink" title="tap_grpc"></a><code>tap_grpc</code></h3><p><code>tap_grpc</code>由<code>Server::new(subscribe)</code>生成，实现了<code>api::server::Tap</code>这个grpc server，响应<code>observe</code>这个method请求。该请求来自Linkerd2的tap组件。</p>
 <p>收到请求后：</p>
 <ol>
 <li>解析请求参数：<code>limit</code> <code>match</code> <code>extract</code></li>
@@ -300,14 +317,12 @@
 <p>看<code>Tap::tap</code>（见<code>linkerd2-proxy/linkerd/app/core/src/tap/grpc/server.rs:267</code>）：</p>
 <figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> shared = <span class="keyword">self</span>.shared.upgrade()?;</span><br><span class="line"><span class="comment">// 判断是否需要tap</span></span><br><span class="line"><span class="keyword">if</span> !shared.match_.matches(req, inspect) &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 省略若干从req中提取事件信息...</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// tap事件</span></span><br><span class="line"><span class="keyword">let</span> event = api::TapEvent &#123;</span><br><span class="line">    event: <span class="literal">Some</span>(api::tap_event::Event::Http(api::tap_event::Http &#123;</span><br><span class="line">        event: <span class="literal">Some</span>(api::tap_event::http::Event::RequestInit(init)),</span><br><span class="line">    &#125;)),</span><br><span class="line">    ..base_event.clone()</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 发送事件</span></span><br><span class="line"><span class="keyword">let</span> <span class="keyword">mut</span> events_tx = shared.events_tx.clone();</span><br><span class="line">events_tx.try_send(event).ok()?;</span><br><span class="line"></span><br><span class="line"><span class="keyword">let</span> tap = TapTx &#123; id, tx: events_tx &#125;;</span><br><span class="line"></span><br><span class="line"><span class="keyword">let</span> req = TapRequestPayload &#123;</span><br><span class="line">    tap: tap.clone(),</span><br><span class="line">    base_event: base_event.clone(),</span><br><span class="line">&#125;;</span><br><span class="line"><span class="keyword">let</span> rsp = TapResponse &#123;</span><br><span class="line">    tap,</span><br><span class="line">    base_event,</span><br><span class="line">    request_init_at,</span><br><span class="line">    extract_headers,</span><br><span class="line">&#125;;</span><br><span class="line"><span class="literal">Some</span>((req, rsp))</span><br></pre></td></tr></table></figure>
 
-
-
 <h2 id="图示"><a href="#图示" class="headerlink" title="图示"></a>图示</h2><p><img src="proxy-tap.png" alt="proxy-tap"></p>
 <h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>至此，以上3个不同的角色互相合作，实现了：</p>
 <ol>
-<li>linkerd2的tap组件下发tap请求</li>
+<li>Linkerd2的tap组件下发tap请求</li>
 <li>proxy向所有流量请求中插入tap请求</li>
-<li>抓取到tap数据后，上报至linkerd2的tap组件</li>
+<li>抓取到tap数据后，上报至Linkerd2的tap组件</li>
 </ol>
 
     </div>

@@ -13,13 +13,29 @@ typora-copy-images-to: proxy-tap
 
 ## 概述
 
-proxy由rust开发完成，其内部的异步运行时采用了[Tokio](https://tokio-zh.github.io/)框架，服务组件用到了[tower](https://github.com/tower-rs/tower)。
+Linkerd2由`控制平面`和`数据平面`组成：
 
-本文主要关注proxy与tap组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。
+- `控制平面`是在一个专门的Kubernetes命名空间（默认是linkerd）中运行的一组服务，这些服务共同实现了聚合遥测数据、提供一组面向用户的API、向`数据平面`提供控制指令等功能。
+
+- `数据平面`由一组用Rust编写的轻量级代理组成，它们安装在服务的每个pod中。它通过`initContainer`配置`iptables`来接管Pod的所有出入流量。它对服务毫无侵入，服务本身不需要修改任何代码，甚至可以将它添加到`正在运行`的服务中。
+
+以下是官方的架构示意图：
+
+![proxy-destination](control-plane.png)
+
+tap是Linkerd2的一个非常有特色的功能，它可以随时抓取某资源的实时流量。有效的利用该功能可以非常方便的监控服务的请求流量情况，协助调试服务。
+
+tap相关的功能组件如下：
+
+- web/CLI: 发起tap请求，展示tap监控结果
+- tap: 将来自web/CLI的tap请求转为gRPC请求并发至proxy组件，将proxy回复的tap事件回复给web/CLI
+- proxy: 处理tap请求，从经过的request/response数据中获取需要的信息，组成tap事件上报
+
+前两者逻辑相对简单，此处主要关注proxy与tap组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。
+
+> 注：本文基于`Linkerd2` `stable-2.6.0`版本，`linkerd-proxy` `v2.76.0`版本。
 
 <!--more-->
-
-
 
 ## 初始化
 
@@ -28,12 +44,6 @@ proxy由rust开发完成，其内部的异步运行时采用了[Tokio](https://t
 ```rust
 let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 ```
-
-其中：
-
-- `tap_layer` 用于后续的 `inbound` 和 `outbound` 逻辑，及后续请求处理
-- `tap_grpc` 用于 `TapServer` 创建，处理tap组件的grpc请求
-- `tap_daemon` 则作为任务正常运行，负责黏合layer与grpc
 
 进入`tap::new()`：
 
@@ -44,9 +54,13 @@ let (tap_layer, tap_grpc, tap_daemon) = tap::new();
     (layer, server, daemon)
 ```
 
-这3句分别创建了这3个对象。
+此处创建了如下3个对象：
 
+- `tap_layer` 用于后续的 `inbound` 和 `outbound` 逻辑，及后续请求处理
+- `tap_grpc` 用于 `TapServer` 创建，处理tap组件的grpc请求
+- `tap_daemon` 则作为任务正常运行，负责黏合layer与grpc
 
+下面分别介绍。
 
 ### `tap_daemon`
 
@@ -120,8 +134,6 @@ let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 ```
 
 这段逻辑主要将grpc那边来的tap送到layer，从而将前面的layer和grpc部分的逻辑串了起来。
-
-
 
 ### `tap_layer`
 
@@ -221,11 +233,9 @@ let (tap_layer, tap_grpc, tap_daemon) = tap::new();
 
 前面这些逻辑，其中出现了2个tap接口，一个是`Tap::tap`，一个是`TapResponse::tap`，这俩的核心作用都是从请求或回复数据中获取需要的tap信息，然后发往某个通道，细节下面再讲。
 
-
-
 ### `tap_grpc`
 
-`tap_grpc`由`Server::new(subscribe)`生成，实现了`api::server::Tap`这个grpc server，响应`observe`这个method请求。该请求来自linkerd2的tap组件。
+`tap_grpc`由`Server::new(subscribe)`生成，实现了`api::server::Tap`这个grpc server，响应`observe`这个method请求。该请求来自Linkerd2的tap组件。
 
 收到请求后：
 
@@ -324,19 +334,14 @@ let (tap_layer, tap_grpc, tap_daemon) = tap::new();
         Some((req, rsp))
 ```
 
-
-
 ## 图示
 
 ![proxy-tap](proxy-tap/proxy-tap.png)
-
-
 
 ## 总结
 
 至此，以上3个不同的角色互相合作，实现了：
 
-1. linkerd2的tap组件下发tap请求
+1. Linkerd2的tap组件下发tap请求
 2. proxy向所有流量请求中插入tap请求
-3. 抓取到tap数据后，上报至linkerd2的tap组件
-
+3. 抓取到tap数据后，上报至Linkerd2的tap组件

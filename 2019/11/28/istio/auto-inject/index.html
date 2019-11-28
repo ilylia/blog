@@ -53,28 +53,32 @@
   };
 </script>
 
-  <meta property="og:type" content="website">
-<meta property="og:title" content="Blog">
-<meta property="og:url" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;index.html">
+  <meta name="description" content="概述研究 istio 在 k8s 中的自动注入的原理以及相关配置。 通常情况下，我们一般会直接在命名空间上添加标签 istio-injection=enabled，就启用了整个命名空间的自动注入功能。这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？ 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。 流程kubernetes">
+<meta name="keywords" content="service mesh,服务网格,istio,sidecar">
+<meta property="og:type" content="article">
+<meta property="og:title" content="istio sidecar 自动注入研究">
+<meta property="og:url" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;11&#x2F;28&#x2F;istio&#x2F;auto-inject&#x2F;index.html">
 <meta property="og:site_name" content="Blog">
+<meta property="og:description" content="概述研究 istio 在 k8s 中的自动注入的原理以及相关配置。 通常情况下，我们一般会直接在命名空间上添加标签 istio-injection=enabled，就启用了整个命名空间的自动注入功能。这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？ 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。 流程kubernetes">
 <meta property="og:locale" content="zh-CN">
+<meta property="og:updated_time" content="2019-11-28T10:52:45.456Z">
 <meta name="twitter:card" content="summary">
 
-<link rel="canonical" href="https://ilylia.github.io/blog/">
+<link rel="canonical" href="https://ilylia.github.io/blog/2019/11/28/istio/auto-inject/">
 
 
 <script id="page-configurations">
   // https://hexo.io/docs/variables.html
   CONFIG.page = {
     sidebar: "",
-    isHome: true,
-    isPost: false,
+    isHome: false,
+    isPost: true,
     isPage: false,
     isArchive: false
   };
 </script>
 
-  <title>Blog</title>
+  <title>istio sidecar 自动注入研究 | Blog</title>
   
 
 
@@ -169,10 +173,10 @@
             
 
   <div class="posts-expand">
-        
+      
   
   
-  <article itemscope itemtype="http://schema.org/Article" class="post-block home" lang="zh-CN">
+  <article itemscope itemtype="http://schema.org/Article" class="post-block " lang="zh-CN">
     <link itemprop="mainEntityOfPage" href="https://ilylia.github.io/blog/blog/2019/11/28/istio/auto-inject/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -186,8 +190,7 @@
     </span>
       <header class="post-header">
         <h1 class="post-title" itemprop="name headline">
-          
-            <a href="/blog/2019/11/28/istio/auto-inject/" class="post-title-link" itemprop="url">istio sidecar 自动注入研究</a>
+          istio sidecar 自动注入研究
         </h1>
 
         <div class="post-meta">
@@ -223,7 +226,7 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>研究 istio 在 k8s 中的自动注入的原理以及相关配置。</p>
+        <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>研究 istio 在 k8s 中的自动注入的原理以及相关配置。</p>
 <p>通常情况下，我们一般会直接在命名空间上添加标签 <code>istio-injection=enabled</code>，就启用了整个命名空间的自动注入功能。<br>这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？</p>
 <p>下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。</p>
 <h2 id="流程"><a href="#流程" class="headerlink" title="流程"></a>流程</h2><h3 id="kubernetes"><a href="#kubernetes" class="headerlink" title="kubernetes"></a>kubernetes</h3><p>在k8s上，判断一个webhook是否需要调用，在 <code>k8s.io/apiserver/pkg/admission/plugin/webhook/generic/webhook.go</code> 文件中 <code>Webhook.ShouldCallHook</code> 方法中：</p>
@@ -286,293 +289,42 @@
 </li>
 </ol>
 
-      
     </div>
 
     
     
     
+
       <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
+          <div class="post-tags">
+              <a href="/blog/tags/istio/" rel="tag"># istio</a>
+              <a href="/blog/tags/sidecar/" rel="tag"># sidecar</a>
+              <a href="/blog/tags/inject/" rel="tag"># inject</a>
+              <a href="/blog/tags/admission/" rel="tag"># admission</a>
+          </div>
 
         
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block home" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="https://ilylia.github.io/blog/blog/2019/10/30/linkerd2/proxy-tap/">
 
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="https://avatars3.githubusercontent.com/u/419382">
-      <meta itemprop="name" content="ilylia">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="Blog">
-    </span>
-      <header class="post-header">
-        <h1 class="post-title" itemprop="name headline">
-          
-            <a href="/blog/2019/10/30/linkerd2/proxy-tap/" class="post-title-link" itemprop="url">linkerd2 proxy tap 学习笔记</a>
-        </h1>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="fa fa-calendar-o"></i>
-              </span>
-              <span class="post-meta-item-text">发表于</span>
-
-              <time title="创建时间：2019-10-30 08:58:27" itemprop="dateCreated datePublished" datetime="2019-10-30T08:58:27+08:00">2019-10-30</time>
-            </span>
-              <span class="post-meta-item">
-                <span class="post-meta-item-icon">
-                  <i class="fa fa-calendar-check-o"></i>
-                </span>
-                <span class="post-meta-item-text">更新于</span>
-                <time title="修改时间：2019-11-28 18:52:45" itemprop="dateModified" datetime="2019-11-28T18:52:45+08:00">2019-11-28</time>
-              </span>
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="fa fa-folder-o"></i>
-              </span>
-              <span class="post-meta-item-text">分类于</span>
-                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-                  <a href="/blog/categories/linkerd/" itemprop="url" rel="index">
-                    <span itemprop="name">linkerd</span>
-                  </a>
-                </span>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>Linkerd2由<code>控制平面</code>和<code>数据平面</code>组成：</p>
-<ul>
-<li><p><code>控制平面</code>是在一个专门的Kubernetes命名空间（默认是linkerd）中运行的一组服务，这些服务共同实现了聚合遥测数据、提供一组面向用户的API、向<code>数据平面</code>提供控制指令等功能。</p>
-</li>
-<li><p><code>数据平面</code>由一组用Rust编写的轻量级代理组成，它们安装在服务的每个pod中。它通过<code>initContainer</code>配置<code>iptables</code>来接管Pod的所有出入流量。它对服务毫无侵入，服务本身不需要修改任何代码，甚至可以将它添加到<code>正在运行</code>的服务中。</p>
-</li>
-</ul>
-<p>以下是官方的架构示意图：</p>
-<p><img src="control-plane.png" alt="proxy-destination"></p>
-<p>tap是Linkerd2的一个非常有特色的功能，它可以随时抓取某资源的实时流量。有效的利用该功能可以非常方便的监控服务的请求流量情况，协助调试服务。</p>
-<p>tap相关的功能组件如下：</p>
-<ul>
-<li>web/CLI: 发起tap请求，展示tap监控结果</li>
-<li>tap: 将来自web/CLI的tap请求转为gRPC请求并发至proxy组件，将proxy回复的tap事件回复给web/CLI</li>
-<li>proxy: 处理tap请求，从经过的request/response数据中获取需要的信息，组成tap事件上报</li>
-</ul>
-<p>前两者逻辑相对简单，此处主要关注proxy与tap组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。</p>
-<blockquote>
-<p>注：本文基于<code>Linkerd2</code> <code>stable-2.6.0</code>版本，<code>linkerd-proxy</code> <code>v2.76.0</code>版本。</p>
-</blockquote>
-          <!--noindex-->
-            <div class="post-button">
-              <a class="btn" href="/blog/2019/10/30/linkerd2/proxy-tap/#more" rel="contents">
-                阅读全文 &raquo;
-              </a>
+          <div class="post-nav">
+            <div class="post-nav-next post-nav-item">
+                <a href="/blog/2019/10/30/linkerd2/proxy-tap/" rel="next" title="linkerd2 proxy tap 学习笔记">
+                  <i class="fa fa-chevron-left"></i> linkerd2 proxy tap 学习笔记
+                </a>
             </div>
-          <!--/noindex-->
-        
-      
-    </div>
 
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
+            <span class="post-nav-divider"></span>
 
-        
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block home" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="https://ilylia.github.io/blog/blog/2019/10/25/linkerd2/proxy-conn-req/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="https://avatars3.githubusercontent.com/u/419382">
-      <meta itemprop="name" content="ilylia">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="Blog">
-    </span>
-      <header class="post-header">
-        <h1 class="post-title" itemprop="name headline">
-          
-            <a href="/blog/2019/10/25/linkerd2/proxy-conn-req/" class="post-title-link" itemprop="url">linkerd2 proxy 连接请求处理 学习笔记</a>
-        </h1>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="fa fa-calendar-o"></i>
-              </span>
-              <span class="post-meta-item-text">发表于</span>
-
-              <time title="创建时间：2019-10-25 08:58:27" itemprop="dateCreated datePublished" datetime="2019-10-25T08:58:27+08:00">2019-10-25</time>
-            </span>
-              <span class="post-meta-item">
-                <span class="post-meta-item-icon">
-                  <i class="fa fa-calendar-check-o"></i>
-                </span>
-                <span class="post-meta-item-text">更新于</span>
-                <time title="修改时间：2019-11-28 18:52:45" itemprop="dateModified" datetime="2019-11-28T18:52:45+08:00">2019-11-28</time>
-              </span>
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="fa fa-folder-o"></i>
-              </span>
-              <span class="post-meta-item-text">分类于</span>
-                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-                  <a href="/blog/categories/linkerd/" itemprop="url" rel="index">
-                    <span itemprop="name">linkerd</span>
-                  </a>
-                </span>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <p>proxy中用到了tower服务框架和toiko异步框架来实现，本文简单分析下proxy监听的端口从收到连接到处理请求的流程逻辑。</p>
-          <!--noindex-->
-            <div class="post-button">
-              <a class="btn" href="/blog/2019/10/25/linkerd2/proxy-conn-req/#more" rel="contents">
-                阅读全文 &raquo;
-              </a>
+            <div class="post-nav-prev post-nav-item">
             </div>
-          <!--/noindex-->
-        
-      
-    </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
+          </div>
       </footer>
-  </article>
-  
-  
-  
-
-        
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block home" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="https://ilylia.github.io/blog/blog/2019/10/10/linkerd2/proxy-destination/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="https://avatars3.githubusercontent.com/u/419382">
-      <meta itemprop="name" content="ilylia">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="Blog">
-    </span>
-      <header class="post-header">
-        <h1 class="post-title" itemprop="name headline">
-          
-            <a href="/blog/2019/10/10/linkerd2/proxy-destination/" class="post-title-link" itemprop="url">linkerd2 proxy destination 学习笔记</a>
-        </h1>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="fa fa-calendar-o"></i>
-              </span>
-              <span class="post-meta-item-text">发表于</span>
-
-              <time title="创建时间：2019-10-10 08:58:27" itemprop="dateCreated datePublished" datetime="2019-10-10T08:58:27+08:00">2019-10-10</time>
-            </span>
-              <span class="post-meta-item">
-                <span class="post-meta-item-icon">
-                  <i class="fa fa-calendar-check-o"></i>
-                </span>
-                <span class="post-meta-item-text">更新于</span>
-                <time title="修改时间：2019-11-28 18:52:45" itemprop="dateModified" datetime="2019-11-28T18:52:45+08:00">2019-11-28</time>
-              </span>
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="fa fa-folder-o"></i>
-              </span>
-              <span class="post-meta-item-text">分类于</span>
-                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-                  <a href="/blog/categories/linkerd/" itemprop="url" rel="index">
-                    <span itemprop="name">linkerd</span>
-                  </a>
-                </span>
-            </span>
-
-          
-
-        </div>
-      </header>
-
     
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>proxy由rust开发完成，其内部的异步运行时采用了<a href="https://tokio-zh.github.io/" target="_blank" rel="noopener">Tokio</a>框架，服务组件用到了<a href="https://github.com/tower-rs/tower" target="_blank" rel="noopener">tower</a>。</p>
-<p>本文主要关注proxy与destination组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。</p>
-          <!--noindex-->
-            <div class="post-button">
-              <a class="btn" href="/blog/2019/10/10/linkerd2/proxy-destination/#more" rel="contents">
-                阅读全文 &raquo;
-              </a>
-            </div>
-          <!--/noindex-->
-        
-      
-    </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
   </article>
   
   
   
 
   </div>
-
-  
-
 
 
           </div>
@@ -601,6 +353,7 @@
 
       <!--noindex-->
       <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#概述"><span class="nav-number">1.</span> <span class="nav-text">概述</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#流程"><span class="nav-number">2.</span> <span class="nav-text">流程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#kubernetes"><span class="nav-number">2.1.</span> <span class="nav-text">kubernetes</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#istio-sidecar-injector"><span class="nav-number">2.2.</span> <span class="nav-text">istio-sidecar-injector</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#结论"><span class="nav-number">3.</span> <span class="nav-text">结论</span></a></li></ol></div>
       </div>
       <!--/noindex-->
 

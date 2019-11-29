@@ -180,6 +180,20 @@ webhook 请求过来后，执行到 `pkg/kube/inject/inject.go` 文件的 `injec
     意为对标签值不为 `disabled` 的命名空间都调用 webhook。
 
 1. 命名空间不加 `istio-injection` 标签
+1. 修改 `istio-sidecar-injector` ConfigMap 配置：
+
+    ```bash
+    $ kubectl -n istio-system edit configmaps istio-sidecar-injector
+    ```
+
+    并编辑内容：
+
+    ```yml
+    policy: disabled
+    ```
+
+    意为对所有 Pod 默认不注入 Sidecar。
+
 1. 给 pod 的 deplotment 添加注解：
 
     ```yml

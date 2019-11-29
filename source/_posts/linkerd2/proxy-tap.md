@@ -19,6 +19,8 @@ Linkerd2由`控制平面`和`数据平面`组成：
 
 - `数据平面`由一组用Rust编写的轻量级代理组成，它们安装在服务的每个pod中。它通过`initContainer`配置`iptables`来接管Pod的所有出入流量。它对服务毫无侵入，服务本身不需要修改任何代码，甚至可以将它添加到`正在运行`的服务中。
 
+<!--more-->
+
 以下是官方的架构示意图：
 
 ![proxy-destination](control-plane.png)
@@ -34,8 +36,6 @@ tap相关的功能组件如下：
 前两者逻辑相对简单，此处主要关注proxy与tap组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。
 
 > 注：本文基于`Linkerd2` `stable-2.6.0`版本，`linkerd-proxy` `v2.76.0`版本。
-
-<!--more-->
 
 ## 初始化
 

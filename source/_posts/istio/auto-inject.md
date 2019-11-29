@@ -19,6 +19,8 @@ keywords: ["service mesh","服务网格","istio","sidecar"]
 
 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。
 
+<!--more-->
+
 ## 流程
 
 ### kubernetes

@@ -53,15 +53,15 @@
   };
 </script>
 
-  <meta name="description" content="概述研究 istio 在 k8s 中的自动注入的原理以及相关配置。 通常情况下，我们一般会直接在命名空间上添加标签 istio-injection=enabled，就启用了整个命名空间的自动注入功能。这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？ 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。 流程kubernetes">
+  <meta name="description" content="概述研究 istio 在 k8s 中的自动注入的原理以及相关配置。 通常情况下，我们一般会直接在命名空间上添加标签 istio-injection=enabled，就启用了整个命名空间的自动注入功能。这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？ 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。">
 <meta name="keywords" content="service mesh,服务网格,istio,sidecar">
 <meta property="og:type" content="article">
 <meta property="og:title" content="istio sidecar 自动注入研究">
 <meta property="og:url" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;11&#x2F;28&#x2F;istio&#x2F;auto-inject&#x2F;index.html">
 <meta property="og:site_name" content="Blog">
-<meta property="og:description" content="概述研究 istio 在 k8s 中的自动注入的原理以及相关配置。 通常情况下，我们一般会直接在命名空间上添加标签 istio-injection=enabled，就启用了整个命名空间的自动注入功能。这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？ 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。 流程kubernetes">
+<meta property="og:description" content="概述研究 istio 在 k8s 中的自动注入的原理以及相关配置。 通常情况下，我们一般会直接在命名空间上添加标签 istio-injection=enabled，就启用了整个命名空间的自动注入功能。这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？ 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。">
 <meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2019-11-28T10:52:45.456Z">
+<meta property="og:updated_time" content="2019-11-29T01:32:27.181Z">
 <meta name="twitter:card" content="summary">
 
 <link rel="canonical" href="https://ilylia.github.io/blog/2019/11/28/istio/auto-inject/">
@@ -199,10 +199,16 @@
                 <i class="fa fa-calendar-o"></i>
               </span>
               <span class="post-meta-item-text">发表于</span>
-              
 
-              <time title="创建时间：2019-11-28 10:46:27 / 修改时间：18:52:45" itemprop="dateCreated datePublished" datetime="2019-11-28T10:46:27+08:00">2019-11-28</time>
+              <time title="创建时间：2019-11-28 10:46:27" itemprop="dateCreated datePublished" datetime="2019-11-28T10:46:27+08:00">2019-11-28</time>
             </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-calendar-check-o"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2019-11-29 09:32:27" itemprop="dateModified" datetime="2019-11-29T09:32:27+08:00">2019-11-29</time>
+              </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
                 <i class="fa fa-folder-o"></i>
@@ -229,6 +235,8 @@
         <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>研究 istio 在 k8s 中的自动注入的原理以及相关配置。</p>
 <p>通常情况下，我们一般会直接在命名空间上添加标签 <code>istio-injection=enabled</code>，就启用了整个命名空间的自动注入功能。<br>这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？</p>
 <p>下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。</p>
+<a id="more"></a>
+
 <h2 id="流程"><a href="#流程" class="headerlink" title="流程"></a>流程</h2><h3 id="kubernetes"><a href="#kubernetes" class="headerlink" title="kubernetes"></a>kubernetes</h3><p>在k8s上，判断一个webhook是否需要调用，在 <code>k8s.io/apiserver/pkg/admission/plugin/webhook/generic/webhook.go</code> 文件中 <code>Webhook.ShouldCallHook</code> 方法中：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> matches <span class="keyword">bool</span></span><br><span class="line"><span class="keyword">for</span> _, r := <span class="keyword">range</span> h.Rules &#123;</span><br><span class="line">    m := rules.Matcher&#123;Rule: r, Attr: attr&#125;</span><br><span class="line">    <span class="keyword">if</span> m.Matches() &#123;</span><br><span class="line">        matches = <span class="literal">true</span></span><br><span class="line">        <span class="keyword">break</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">if</span> !matches &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span>, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">return</span> a.namespaceMatcher.MatchNamespaceSelector(h, attr)</span><br></pre></td></tr></table></figure>
 

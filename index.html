@@ -196,10 +196,16 @@
                 <i class="fa fa-calendar-o"></i>
               </span>
               <span class="post-meta-item-text">发表于</span>
-              
 
-              <time title="创建时间：2019-11-28 10:46:27 / 修改时间：18:52:45" itemprop="dateCreated datePublished" datetime="2019-11-28T10:46:27+08:00">2019-11-28</time>
+              <time title="创建时间：2019-11-28 10:46:27" itemprop="dateCreated datePublished" datetime="2019-11-28T10:46:27+08:00">2019-11-28</time>
             </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-calendar-check-o"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2019-11-29 09:32:27" itemprop="dateModified" datetime="2019-11-29T09:32:27+08:00">2019-11-29</time>
+              </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
                 <i class="fa fa-folder-o"></i>
@@ -226,66 +232,14 @@
           <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>研究 istio 在 k8s 中的自动注入的原理以及相关配置。</p>
 <p>通常情况下，我们一般会直接在命名空间上添加标签 <code>istio-injection=enabled</code>，就启用了整个命名空间的自动注入功能。<br>这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？</p>
 <p>下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。</p>
-<h2 id="流程"><a href="#流程" class="headerlink" title="流程"></a>流程</h2><h3 id="kubernetes"><a href="#kubernetes" class="headerlink" title="kubernetes"></a>kubernetes</h3><p>在k8s上，判断一个webhook是否需要调用，在 <code>k8s.io/apiserver/pkg/admission/plugin/webhook/generic/webhook.go</code> 文件中 <code>Webhook.ShouldCallHook</code> 方法中：</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> matches <span class="keyword">bool</span></span><br><span class="line"><span class="keyword">for</span> _, r := <span class="keyword">range</span> h.Rules &#123;</span><br><span class="line">    m := rules.Matcher&#123;Rule: r, Attr: attr&#125;</span><br><span class="line">    <span class="keyword">if</span> m.Matches() &#123;</span><br><span class="line">        matches = <span class="literal">true</span></span><br><span class="line">        <span class="keyword">break</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">if</span> !matches &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span>, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">return</span> a.namespaceMatcher.MatchNamespaceSelector(h, attr)</span><br></pre></td></tr></table></figure>
-
-<p>对比 istio 默认设置的 k8s CRD <code>MutatingWebhookConfiguration</code> 配置中的相关部分：</p>
-<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">webhooks:</span></span><br><span class="line"><span class="attr">- namespaceSelector:</span></span><br><span class="line"><span class="attr">    matchLabels:</span></span><br><span class="line"><span class="attr">      istio-injection:</span> <span class="string">enabled</span></span><br><span class="line"><span class="attr">  rules:</span></span><br><span class="line"><span class="attr">  - apiGroups:</span></span><br><span class="line"><span class="bullet">    -</span> <span class="string">""</span></span><br><span class="line"><span class="attr">    apiVersions:</span></span><br><span class="line"><span class="bullet">    -</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">    operations:</span></span><br><span class="line"><span class="bullet">    -</span> <span class="string">CREATE</span></span><br><span class="line"><span class="attr">    resources:</span></span><br><span class="line"><span class="bullet">    -</span> <span class="string">pods</span></span><br><span class="line"><span class="attr">    scope:</span> <span class="string">'*'</span></span><br></pre></td></tr></table></figure>
-
-<p>可见，前面一段 <code>rules</code> 相关的逻辑判断，主要是过滤一些不关心的请求，此处相当于只保留 pod 的创建请求。</p>
-<p>然后会判断命名空间的规则，此处是判断标签，是否有 key 为 <code>istio-injection</code> 且 value 为 <code>enabled</code>，只有符合该标签的命名空间中的 pod 的创建，才会调用 <code>istio-sidecar-injector</code> 这个 webhook。</p>
-<h3 id="istio-sidecar-injector"><a href="#istio-sidecar-injector" class="headerlink" title="istio-sidecar-injector"></a>istio-sidecar-injector</h3><p>webhook 请求过来后，执行到 <code>pkg/kube/inject/inject.go</code> 文件的 <code>injectRequired</code> 函数中：</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br></pre></td><td class="code"><pre><span class="line">    <span class="keyword">if</span> podSpec.HostNetwork &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// skip special kubernetes system namespaces</span></span><br><span class="line">    <span class="keyword">for</span> _, namespace := <span class="keyword">range</span> ignored &#123;</span><br><span class="line">        <span class="keyword">if</span> metadata.Namespace == namespace &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">...</span><br><span class="line"></span><br><span class="line">    <span class="keyword">var</span> useDefault <span class="keyword">bool</span></span><br><span class="line">    <span class="keyword">var</span> inject <span class="keyword">bool</span></span><br><span class="line">    <span class="comment">// sidecar.istio.io/inject</span></span><br><span class="line">    <span class="keyword">switch</span> strings.ToLower(annos[annotation.SidecarInject.Name]) &#123;</span><br><span class="line">    <span class="keyword">case</span> <span class="string">"y"</span>, <span class="string">"yes"</span>, <span class="string">"true"</span>, <span class="string">"on"</span>:</span><br><span class="line">        inject = <span class="literal">true</span></span><br><span class="line">    <span class="keyword">case</span> <span class="string">""</span>:</span><br><span class="line">        useDefault = <span class="literal">true</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> useDefault &#123;</span><br><span class="line">        <span class="comment">// NeverInject check</span></span><br><span class="line">        <span class="keyword">if</span> NeverInject &#123;</span><br><span class="line">            inject = <span class="literal">false</span></span><br><span class="line">            useDefault = <span class="literal">false</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> useDefault &#123;</span><br><span class="line">        <span class="comment">// AlwaysInject check</span></span><br><span class="line">        <span class="keyword">if</span> AlwaysInject &#123;</span><br><span class="line">            inject = <span class="literal">true</span></span><br><span class="line">            useDefault = <span class="literal">false</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">var</span> required <span class="keyword">bool</span></span><br><span class="line">    <span class="keyword">switch</span> config.Policy &#123;</span><br><span class="line">    <span class="keyword">default</span>: <span class="comment">// InjectionPolicyOff</span></span><br><span class="line">        <span class="comment">// invalid value</span></span><br><span class="line">        required = <span class="literal">false</span></span><br><span class="line">    <span class="keyword">case</span> InjectionPolicyDisabled:</span><br><span class="line">        <span class="keyword">if</span> useDefault &#123;</span><br><span class="line">            required = <span class="literal">false</span></span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            required = inject</span><br><span class="line">        &#125;</span><br><span class="line">    <span class="keyword">case</span> InjectionPolicyEnabled:</span><br><span class="line">        <span class="keyword">if</span> useDefault &#123;</span><br><span class="line">            required = <span class="literal">true</span></span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            required = inject</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">...</span><br></pre></td></tr></table></figure>
-
-<p>进入逻辑，首先判断是否使用 <code>HostNetwork</code>，然后看命名空间是否在忽略的列表（即 <code>kube-system</code> 和 <code>kube-public</code>，k8s 系统所在）中，通过这两个判断，筛去一些不适合注入的 pod。</p>
-<p>然后检查 pod 是否配置了 <code>sidecar.istio.io/inject</code> 注解为 <code>true</code>（或 <code>yes</code> 等其它yml认为是<code>真</code>的值）：</p>
-<ul>
-<li><p>为 <code>true</code>：注入</p>
-</li>
-<li><p>未设置：按默认继续判断</p>
-<ul>
-<li><p>判断 <code>NeverInject</code>：如果命中就不注入</p>
-</li>
-<li><p>判断 <code>AlwaysInject</code>：如果命中就注入</p>
-</li>
-<li><p>判断 <code>policy</code> 配置</p>
-<ul>
-<li><code>enabled</code>：注入</li>
-<li><code>disabled</code>：不注入</li>
-<li>其它值：不注入</li>
-</ul>
-</li>
-</ul>
-</li>
-<li><p>其它：认为为 <code>false</code>，不注入</p>
-</li>
-</ul>
-<h2 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h2><p>由此，可得出结论：</p>
-<ol>
-<li>命名空间的标签控制是否调用 webhook</li>
-<li>pod的注解控制是否注入</li>
-<li>pod未设置时，NeverInject、AlwaysInject、policy 配合决定是否注入</li>
-</ol>
-<p>对于需要开启命名空间的自动注入，然后特殊pod不自动时，可以直接走默认的设置，然后给命名空间加标签来实现（官方示例的做法）。</p>
-<p>对于不开启命名空间自动注入，只针对特殊pod自动注入时，就需要如下调整：</p>
-<ol>
-<li><p>修改 <code>MutatingWebhookConfiguration</code> 配置：</p>
- <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ kubectl edit mutatingwebhookconfiguration istio-sidecar-injector</span><br></pre></td></tr></table></figure>
-
-<p> 并编辑内容：</p>
- <figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">namespaceSelector:</span></span><br><span class="line"><span class="attr">  matchExpressions:</span></span><br><span class="line"><span class="attr">  - key:</span> <span class="string">istio-injection</span></span><br><span class="line"><span class="attr">    operator:</span> <span class="string">NotIn</span></span><br><span class="line"><span class="attr">    values:</span></span><br><span class="line"><span class="bullet">    -</span> <span class="string">disabled</span></span><br></pre></td></tr></table></figure>
-
-<p> 意为对标签值不为 <code>disabled</code> 的命名空间都调用 webhook。</p>
-</li>
-<li><p>命名空间不加 <code>istio-injection</code> 标签</p>
-</li>
-<li><p>给 pod 的 deplotment 添加注解：</p>
- <figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">spec:</span></span><br><span class="line"><span class="attr">  template:</span></span><br><span class="line"><span class="attr">    metadata:</span></span><br><span class="line"><span class="attr">      annotations:</span></span><br><span class="line">        <span class="string">sidecar.istio.io/inject:</span> <span class="string">"true"</span></span><br></pre></td></tr></table></figure>
-
-<p> 意为针对该 pod，需要自动注入。</p>
-</li>
-</ol>
-
+          <!--noindex-->
+            <div class="post-button">
+              <a class="btn" href="/blog/2019/11/28/istio/auto-inject/#more" rel="contents">
+                阅读全文 &raquo;
+              </a>
+            </div>
+          <!--/noindex-->
+        
       
     </div>
 
@@ -335,7 +289,7 @@
                   <i class="fa fa-calendar-check-o"></i>
                 </span>
                 <span class="post-meta-item-text">更新于</span>
-                <time title="修改时间：2019-11-28 18:52:45" itemprop="dateModified" datetime="2019-11-28T18:52:45+08:00">2019-11-28</time>
+                <time title="修改时间：2019-11-29 09:32:27" itemprop="dateModified" datetime="2019-11-29T09:32:27+08:00">2019-11-29</time>
               </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -367,19 +321,6 @@
 <li><p><code>数据平面</code>由一组用Rust编写的轻量级代理组成，它们安装在服务的每个pod中。它通过<code>initContainer</code>配置<code>iptables</code>来接管Pod的所有出入流量。它对服务毫无侵入，服务本身不需要修改任何代码，甚至可以将它添加到<code>正在运行</code>的服务中。</p>
 </li>
 </ul>
-<p>以下是官方的架构示意图：</p>
-<p><img src="control-plane.png" alt="proxy-destination"></p>
-<p>tap是Linkerd2的一个非常有特色的功能，它可以随时抓取某资源的实时流量。有效的利用该功能可以非常方便的监控服务的请求流量情况，协助调试服务。</p>
-<p>tap相关的功能组件如下：</p>
-<ul>
-<li>web/CLI: 发起tap请求，展示tap监控结果</li>
-<li>tap: 将来自web/CLI的tap请求转为gRPC请求并发至proxy组件，将proxy回复的tap事件回复给web/CLI</li>
-<li>proxy: 处理tap请求，从经过的request/response数据中获取需要的信息，组成tap事件上报</li>
-</ul>
-<p>前两者逻辑相对简单，此处主要关注proxy与tap组件交互相关的一些逻辑，简单分析proxy内部的运行逻辑。</p>
-<blockquote>
-<p>注：本文基于<code>Linkerd2</code> <code>stable-2.6.0</code>版本，<code>linkerd-proxy</code> <code>v2.76.0</code>版本。</p>
-</blockquote>
           <!--noindex-->
             <div class="post-button">
               <a class="btn" href="/blog/2019/10/30/linkerd2/proxy-tap/#more" rel="contents">
@@ -437,7 +378,7 @@
                   <i class="fa fa-calendar-check-o"></i>
                 </span>
                 <span class="post-meta-item-text">更新于</span>
-                <time title="修改时间：2019-11-28 18:52:45" itemprop="dateModified" datetime="2019-11-28T18:52:45+08:00">2019-11-28</time>
+                <time title="修改时间：2019-11-29 09:32:27" itemprop="dateModified" datetime="2019-11-29T09:32:27+08:00">2019-11-29</time>
               </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -520,7 +461,7 @@
                   <i class="fa fa-calendar-check-o"></i>
                 </span>
                 <span class="post-meta-item-text">更新于</span>
-                <time title="修改时间：2019-11-28 18:52:45" itemprop="dateModified" datetime="2019-11-28T18:52:45+08:00">2019-11-28</time>
+                <time title="修改时间：2019-11-29 09:32:27" itemprop="dateModified" datetime="2019-11-29T09:32:27+08:00">2019-11-29</time>
               </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">

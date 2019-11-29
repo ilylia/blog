@@ -63,7 +63,7 @@
 <meta property="og:locale" content="zh-CN">
 <meta property="og:image" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;10&#x2F;30&#x2F;linkerd2&#x2F;proxy-tap&#x2F;control-plane.png">
 <meta property="og:image" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;10&#x2F;30&#x2F;linkerd2&#x2F;proxy-tap&#x2F;proxy-tap.png">
-<meta property="og:updated_time" content="2019-11-28T10:52:45.456Z">
+<meta property="og:updated_time" content="2019-11-29T01:32:27.181Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;10&#x2F;30&#x2F;linkerd2&#x2F;proxy-tap&#x2F;control-plane.png">
 
@@ -210,7 +210,7 @@
                   <i class="fa fa-calendar-check-o"></i>
                 </span>
                 <span class="post-meta-item-text">更新于</span>
-                <time title="修改时间：2019-11-28 18:52:45" itemprop="dateModified" datetime="2019-11-28T18:52:45+08:00">2019-11-28</time>
+                <time title="修改时间：2019-11-29 09:32:27" itemprop="dateModified" datetime="2019-11-29T09:32:27+08:00">2019-11-29</time>
               </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -242,6 +242,8 @@
 <li><p><code>数据平面</code>由一组用Rust编写的轻量级代理组成，它们安装在服务的每个pod中。它通过<code>initContainer</code>配置<code>iptables</code>来接管Pod的所有出入流量。它对服务毫无侵入，服务本身不需要修改任何代码，甚至可以将它添加到<code>正在运行</code>的服务中。</p>
 </li>
 </ul>
+<a id="more"></a>
+
 <p>以下是官方的架构示意图：</p>
 <p><img src="control-plane.png" alt="proxy-destination"></p>
 <p>tap是Linkerd2的一个非常有特色的功能，它可以随时抓取某资源的实时流量。有效的利用该功能可以非常方便的监控服务的请求流量情况，协助调试服务。</p>
@@ -255,8 +257,6 @@
 <blockquote>
 <p>注：本文基于<code>Linkerd2</code> <code>stable-2.6.0</code>版本，<code>linkerd-proxy</code> <code>v2.76.0</code>版本。</p>
 </blockquote>
-<a id="more"></a>
-
 <h2 id="初始化"><a href="#初始化" class="headerlink" title="初始化"></a>初始化</h2><p>首先是初始化，在<code>build_proxy_task</code>中：</p>
 <figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> (tap_layer, tap_grpc, tap_daemon) = tap::new();</span><br></pre></td></tr></table></figure>
 

@@ -3,6 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "debugBuild": "node --inspect-brk=5858 ./node_modules/.bin/hexo generate",
+    "debugServer": "node --inspect-brk=5858 ./node_modules/.bin/hexo server",
     "build": "hexo generate",
     "clean": "hexo clean",
     "deploy": "hexo deploy",

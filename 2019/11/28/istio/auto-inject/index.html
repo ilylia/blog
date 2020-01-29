@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
 <meta name="theme-color" content="#222">
-<meta name="generator" content="Hexo 4.0.0">
+<meta name="generator" content="Hexo 4.2.0">
   <link rel="apple-touch-icon" sizes="180x180" href="/blog/images/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/blog/images/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/blog/images/favicon-16x16.png">
@@ -53,15 +53,20 @@
   };
 </script>
 
-  <meta name="description" content="概述研究 istio 在 k8s 中的自动注入的原理以及相关配置。 通常情况下，我们一般会直接在命名空间上添加标签 istio-injection=enabled，就启用了整个命名空间的自动注入功能。这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？ 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。">
-<meta name="keywords" content="service mesh,服务网格,istio,sidecar">
+  <meta name="description" content="概述研究 istio 在 k8s 中的自动注入的原理以及相关配置。 通常情况下，我们一般会直接在命名空间上添加标签 istio-injection&#x3D;enabled，就启用了整个命名空间的自动注入功能。这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？ 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。">
 <meta property="og:type" content="article">
 <meta property="og:title" content="istio sidecar 自动注入研究">
-<meta property="og:url" content="https:&#x2F;&#x2F;ilylia.github.io&#x2F;blog&#x2F;2019&#x2F;11&#x2F;28&#x2F;istio&#x2F;auto-inject&#x2F;index.html">
+<meta property="og:url" content="https://ilylia.github.io/blog/2019/11/28/istio/auto-inject/index.html">
 <meta property="og:site_name" content="Blog">
-<meta property="og:description" content="概述研究 istio 在 k8s 中的自动注入的原理以及相关配置。 通常情况下，我们一般会直接在命名空间上添加标签 istio-injection=enabled，就启用了整个命名空间的自动注入功能。这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？ 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。">
-<meta property="og:locale" content="zh-CN">
-<meta property="og:updated_time" content="2019-12-06T10:54:22.848Z">
+<meta property="og:description" content="概述研究 istio 在 k8s 中的自动注入的原理以及相关配置。 通常情况下，我们一般会直接在命名空间上添加标签 istio-injection&#x3D;enabled，就启用了整个命名空间的自动注入功能。这个功能是如何实现的？如果我不想启用整个命名空间的自动注入，只想开启个别 pod 的自动注入，需要怎么做？ 下面，我们来从原理上分析一下自动注入的实现过程，了解下相关的配置。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2019-11-28T02:46:27.000Z">
+<meta property="article:modified_time" content="2020-01-29T07:11:06.216Z">
+<meta property="article:author" content="ilylia">
+<meta property="article:tag" content="service mesh">
+<meta property="article:tag" content="服务网格">
+<meta property="article:tag" content="istio">
+<meta property="article:tag" content="sidecar">
 <meta name="twitter:card" content="summary">
 
 <link rel="canonical" href="https://ilylia.github.io/blog/2019/11/28/istio/auto-inject/">
@@ -207,7 +212,7 @@
                   <i class="fa fa-calendar-check-o"></i>
                 </span>
                 <span class="post-meta-item-text">更新于</span>
-                <time title="修改时间：2019-12-06 18:54:22" itemprop="dateModified" datetime="2019-12-06T18:54:22+08:00">2019-12-06</time>
+                <time title="修改时间：2020-01-29 15:11:06" itemprop="dateModified" datetime="2020-01-29T15:11:06+08:00">2020-01-29</time>
               </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -241,7 +246,7 @@
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> matches <span class="keyword">bool</span></span><br><span class="line"><span class="keyword">for</span> _, r := <span class="keyword">range</span> h.Rules &#123;</span><br><span class="line">    m := rules.Matcher&#123;Rule: r, Attr: attr&#125;</span><br><span class="line">    <span class="keyword">if</span> m.Matches() &#123;</span><br><span class="line">        matches = <span class="literal">true</span></span><br><span class="line">        <span class="keyword">break</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">if</span> !matches &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span>, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">return</span> a.namespaceMatcher.MatchNamespaceSelector(h, attr)</span><br></pre></td></tr></table></figure>
 
 <p>对比 istio 默认设置的 k8s CRD <code>MutatingWebhookConfiguration</code> 配置中的相关部分：</p>
-<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">webhooks:</span></span><br><span class="line"><span class="attr">- namespaceSelector:</span></span><br><span class="line"><span class="attr">    matchLabels:</span></span><br><span class="line"><span class="attr">      istio-injection:</span> <span class="string">enabled</span></span><br><span class="line"><span class="attr">  rules:</span></span><br><span class="line"><span class="attr">  - apiGroups:</span></span><br><span class="line"><span class="bullet">    -</span> <span class="string">""</span></span><br><span class="line"><span class="attr">    apiVersions:</span></span><br><span class="line"><span class="bullet">    -</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">    operations:</span></span><br><span class="line"><span class="bullet">    -</span> <span class="string">CREATE</span></span><br><span class="line"><span class="attr">    resources:</span></span><br><span class="line"><span class="bullet">    -</span> <span class="string">pods</span></span><br><span class="line"><span class="attr">    scope:</span> <span class="string">'*'</span></span><br></pre></td></tr></table></figure>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">webhooks:</span></span><br><span class="line"><span class="bullet">-</span> <span class="attr">namespaceSelector:</span></span><br><span class="line">    <span class="attr">matchLabels:</span></span><br><span class="line">      <span class="attr">istio-injection:</span> <span class="string">enabled</span></span><br><span class="line">  <span class="attr">rules:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">apiGroups:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">""</span></span><br><span class="line">    <span class="attr">apiVersions:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">v1</span></span><br><span class="line">    <span class="attr">operations:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">CREATE</span></span><br><span class="line">    <span class="attr">resources:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">pods</span></span><br><span class="line">    <span class="attr">scope:</span> <span class="string">'*'</span></span><br></pre></td></tr></table></figure>
 
 <p>可见，前面一段 <code>rules</code> 相关的逻辑判断，主要是过滤一些不关心的请求，此处相当于只保留 pod 的创建请求。</p>
 <p>然后会判断命名空间的规则，此处是判断标签，是否有 key 为 <code>istio-injection</code> 且 value 为 <code>enabled</code>，只有符合该标签的命名空间中的 pod 的创建，才会调用 <code>istio-sidecar-injector</code> 这个 webhook。</p>
@@ -284,7 +289,7 @@
  <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ kubectl edit mutatingwebhookconfiguration istio-sidecar-injector</span><br></pre></td></tr></table></figure>
 
 <p> 并编辑内容：</p>
- <figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">namespaceSelector:</span></span><br><span class="line"><span class="attr">  matchExpressions:</span></span><br><span class="line"><span class="attr">  - key:</span> <span class="string">istio-injection</span></span><br><span class="line"><span class="attr">    operator:</span> <span class="string">NotIn</span></span><br><span class="line"><span class="attr">    values:</span></span><br><span class="line"><span class="bullet">    -</span> <span class="string">disabled</span></span><br></pre></td></tr></table></figure>
+ <figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">namespaceSelector:</span></span><br><span class="line">  <span class="attr">matchExpressions:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">key:</span> <span class="string">istio-injection</span></span><br><span class="line">    <span class="attr">operator:</span> <span class="string">NotIn</span></span><br><span class="line">    <span class="attr">values:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">disabled</span></span><br></pre></td></tr></table></figure>
 
 <p> 意为对标签值不为 <code>disabled</code> 的命名空间都调用 webhook。</p>
 </li>
@@ -299,7 +304,7 @@
 <p> 意为对所有 Pod 默认不注入 Sidecar。</p>
 </li>
 <li><p>给 pod 的 deplotment 添加注解：</p>
- <figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">spec:</span></span><br><span class="line"><span class="attr">  template:</span></span><br><span class="line"><span class="attr">    metadata:</span></span><br><span class="line"><span class="attr">      annotations:</span></span><br><span class="line">        <span class="string">sidecar.istio.io/inject:</span> <span class="string">"true"</span></span><br></pre></td></tr></table></figure>
+ <figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">template:</span></span><br><span class="line">    <span class="attr">metadata:</span></span><br><span class="line">      <span class="attr">annotations:</span></span><br><span class="line">        <span class="attr">sidecar.istio.io/inject:</span> <span class="string">"true"</span></span><br></pre></td></tr></table></figure>
 
 <p> 意为针对该 pod，需要自动注入。</p>
 </li>
@@ -323,8 +328,8 @@
 
           <div class="post-nav">
             <div class="post-nav-next post-nav-item">
-                <a href="/blog/2019/10/30/linkerd2/proxy-tap/" rel="next" title="linkerd2 proxy tap 学习笔记">
-                  <i class="fa fa-chevron-left"></i> linkerd2 proxy tap 学习笔记
+                <a href="/blog/2019/10/31/linkerd2/tap/" rel="next" title="linkerd2 tap 学习笔记">
+                  <i class="fa fa-chevron-left"></i> linkerd2 tap 学习笔记
                 </a>
             </div>
 
@@ -388,16 +393,16 @@
       <div class="site-state-item site-state-posts">
           <a href="/blog/archives/">
         
-          <span class="site-state-item-count">5</span>
+          <span class="site-state-item-count">7</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
-        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-count">3</span>
         <span class="site-state-item-name">分类</span>
       </div>
       <div class="site-state-item site-state-tags">
-        <span class="site-state-item-count">12</span>
+        <span class="site-state-item-count">16</span>
         <span class="site-state-item-name">标签</span>
       </div>
   </nav>
@@ -422,9 +427,9 @@
 <div class="copyright">
   
   &copy; 
-  <span itemprop="copyrightYear">2019</span>
+  <span itemprop="copyrightYear">2020</span>
   <span class="with-love">
-    <i class="fa fa-"></i>
+    <i class="fa fa-user"></i>
   </span>
   <span class="author" itemprop="copyrightHolder">ilylia</span>
 </div>
@@ -453,9 +458,17 @@
   <script src="//cdn.jsdelivr.net/gh/fancyapps/fancybox@3/dist/jquery.fancybox.min.js"></script>
   <script src="/blog/lib/velocity/velocity.min.js"></script>
   <script src="/blog/lib/velocity/velocity.ui.min.js"></script>
-<script src="/blog/js/utils.js"></script><script src="/blog/js/motion.js"></script>
+
+<script src="/blog/js/utils.js"></script>
+
+<script src="/blog/js/motion.js"></script>
+
+
 <script src="/blog/js/schemes/muse.js"></script>
+
+
 <script src="/blog/js/next-boot.js"></script>
+
 
 
 
